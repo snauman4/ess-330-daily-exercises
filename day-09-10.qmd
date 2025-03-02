@@ -1,0 +1,77 @@
+---
+title: "Daily Exercise 09-10"
+author: "Samantha Nauman"
+date: "2025-03-02"
+format: html
+execute: 
+  echo: true
+---
+
+Using the airquality from R datasets
+
+```{r}
+library(tidyverse)
+library(visdat)
+data("airquality")
+```
+
+1. Use the help (?) function to learn more about the dataset
+```{r}
+?airquality
+```
+2. Use vis_dat to check out the data. Does it need cleaning?
+
+Yes, the data needs cleaning because there are NA values in Ozone and Solar.R.
+```{r}
+vis_dat(airquality)
+
+# cleaning ozone and solar data
+airquality <- airquality %>%
+  drop_na()
+vis_dat(airquality)
+```
+
+3. Fit a linear model to the cleaned data to predict Ozone from one of the possible predictors of your choosing. Why did you chose that variable?
+
+Temperature is a possible predictor for ozone because it has the strongest correlation with ozone at 0.29. 
+```{r}
+cor(airquality[, c("Ozone", "Solar.R", "Wind", "Temp")], use="complete.obs")
+
+lm_model <- lm(Ozone ~ Temp, data = airquality)
+```
+
+4. Using summary(), Does this seem like a valid model?
+
+Yes, the linear model of ozone and temperature seems like a valid model. 
+```{r}
+summary(lm_model) 
+```
+
+5. Explain the R2 found in a sentence.
+
+48.8% of the variation in ozone levels can be explained by temperature, while the remaining 51.2% is due to other factors not included in the model. 
+
+6. Use broom::augment to predict the Ozone of the cleaned data
+
+```{r}
+library(broom)
+predicted_data <- augment(lm_model, data=airquality)
+head(predicted_data)
+```
+
+7. Use ggplot to plot the actual vs predicted Ozone
+
+a. Add a red line to show where the actual and predicted values are equal This can be done by plotting a 1:1 line (e.g. intercept 0, slope 1) with geom_abline(intercept = 0, slope = 1, color = "red")
+
+b. Add a subtitle to the plot showing the correlation between the actual and predicted values are equal This can be done by plotting a 1:1 line (e.g. intercept 0, slope 1) with paste("Correlation:", round(cor(a$Ozone, a$.fitted),2)) assuming your augmented data object is called 'a'
+
+```{r}
+ggplot(predicted_data, aes(x = Ozone, y = .fitted)) +
+  geom_point(alpha = 0.7, color = "blue") +
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") + 
+  labs(title = "Actual vs Predicted Ozone Levels",
+       x = "Actual Ozone",
+       y = "Predicted Ozone",
+       subtitle = paste("Correlation:", round(cor(predicted_data$Ozone, predicted_data$.fitted), 2))) +
+  theme_minimal()
+```
