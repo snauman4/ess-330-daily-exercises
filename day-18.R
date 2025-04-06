@@ -109,5 +109,5 @@ scatter <- ggplot(preds, aes(x = .pred, y = logD)) +
   theme_minimal()
 
 print(scatter)
-ggsave("truthvpredicteddeaths.png", scatter, width = 6, height = 6, dpi = 300)
+ggsave("img/truthvpredicteddeaths.png", scatter, width = 6, height = 6, dpi = 300)
 
