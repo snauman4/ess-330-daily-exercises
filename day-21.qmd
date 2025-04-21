@@ -1,0 +1,64 @@
+---
+title: "Daily Assignment 21"
+subtitle: 'Ecosystem Science and Sustainability 330'
+author:
+  - name: Samantha Nauman
+    email: "snauman4@colostate.edu"
+format: html
+execute:
+  echo: true
+---
+```{r}
+library(dataRetrieval)
+library(dplyr)
+library(tsibble)
+
+# Example: Cache la Poudre River at Mouth (USGS site 06752260)
+poudre_flow <- readNWISdv(siteNumber = "06752260",    # Download data from USGS for site 06752260
+                          parameterCd = "00060",      # Parameter code 00060 = discharge in cfs)
+                          startDate = "2013-01-01",   # Set the start date
+                          endDate = "2023-12-31") |>  # Set the end date
+  renameNWISColumns() |>                              # Rename columns to standard names (e.g., "Flow", "Date")
+  mutate(Date = yearmonth(Date)) |>                   # Convert daily Date values into a year-month format (e.g., "2023 Jan")
+  group_by(Date) |>                                   # Group the data by the new monthly Date
+  summarise(Flow = mean(Flow))                       # Calculate the average daily flow for each month
+
+# 1. Convert to tsibble
+poudre_ts <- poudre_flow %>%
+  as_tsibble(index = Date)
+
+poudre_ts
+
+# 2. Plotting the time series
+library(ggplot2)
+library(plotly)
+
+flowplot <- ggplot(poudre_ts, aes(x = Date, y = Flow)) +
+  geom_line() +
+  labs(title = "Monthly Mean Discharge\nCache la Poudre River (2013–2023)",
+       x = "Year‑Month", y = "Discharge (cfs)")
+
+print(flowplot)
+ggplotly(flowplot)
+
+# 3. Subseries
+library(feasts)
+poudre_ts %>%
+  gg_subseries(Flow) +
+  labs(title = "Subseries Plot of Monthly Flow",
+       y = "Discharge (cfs)")
+```
+In this plot, the "seasons" are the calendar months (January to December), with each little line as the monthly totals plotted over the years. The subseries allows you to compare how the flows varied over the years from 2013-2023 by individual months. From the plot, it is seen that there are peaks in late spring/early summer and lows in winter, revealing the seasonal cycle of snow melt runoff.
+```{r}
+# 4. Decompose
+library(fable)
+stl_mod <- poudre_ts %>%
+  model(
+    STL(Flow ~ trend(window = 13) + season(window = "periodic"))
+  )
+components <- stl_mod %>% components()
+
+autoplot(components) +
+  labs(title = "STL Decomposition of Monthly Flow")
+```
+In this plot, the trend is a slowly varying line showing whether baseline flows are rising/falling over the decade. Seasonally, there is a repeating annual cycle, where it peaks in the spring, then troughs in the winter. I think the trend represents the basin's baseline discharge, such as changes in the climate, land, or water-use policies. The seasonal pattern is driven by the hydrological cycle, where snow accumulates through the winter, then melts rapidly in late spring. 
