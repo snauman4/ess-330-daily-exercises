@@ -1,0 +1,118 @@
+---
+title: "Daily Assignment 22"
+subtitle: 'Ecosystem Science and Sustainability 330'
+author:
+  - name: Samantha Nauman
+    email: "snauman4@colostate.edu"
+format: html
+execute:
+  echo: true
+---
+```{r}
+# Previous data collecting from assignment 21
+library(dataRetrieval) 
+library(dplyr)         
+library(tsibble)          
+library(timetk)         
+library(modeltime)       
+library(prophet)      
+library(fable)        
+library(fable.prophet)    
+library(ggplot2)        
+library(lubridate)
+library(tidymodels)
+
+# Example: Cache la Poudre River at Mouth (USGS site 06752260)
+poudre_flow <- readNWISdv(siteNumber = "06752260",    # Download data from USGS for site 06752260
+                          parameterCd = "00060",      # Parameter code 00060 = discharge in cfs)
+                          startDate = "2013-01-01",   # Set the start date
+                          endDate = "2023-12-31") |>  # Set the end date
+  renameNWISColumns() |>                              # Rename columns to standard names (e.g., "Flow", "Date")
+  mutate(Date = as_date(Date),
+         Date = floor_date(Date, "month")) |>                   # Convert daily Date values into a year-month format (e.g., "2023 Jan")
+  group_by(Date) |>                                   # Group the data by the new monthly Date
+  summarise(Flow = mean(Flow),
+            .groups = "drop")                       # Calculate the average daily flow for each month
+# Convert to tsibble
+poudre_ts <- poudre_flow %>%
+  as_tsibble(index = Date)
+
+poudre_ts
+
+# Plotting the time series
+library(ggplot2)
+library(plotly)
+
+flowplot <- ggplot(poudre_ts, aes(x = Date, y = Flow)) +
+  geom_line() +
+  labs(title = "Monthly Mean Discharge\nCache la Poudre River (2013–2023)",
+       x = "Year‑Month", y = "Discharge (cfs)")
+
+print(flowplot)
+ggplotly(flowplot)
+```
+
+```{r}
+# Assignment 22
+# 1. Fit Prophet and Arima Models 
+mods <- list(
+  prophet_reg() %>%
+    set_engine("prophet"),
+  arima_reg() %>% 
+    set_engine("auto_arima")
+)
+
+models <- map(mods, ~ fit(.x, Flow ~ Date, data = poudre_ts))
+
+models_tbl <- as_modeltime_table(models)
+# 2. Forecast the next 12 months
+future_tbl <- poudre_ts %>% future_frame(Date, .length_out = "12 months")
+
+forecast_tbl <- models_tbl %>%
+  modeltime_forecast(
+    new_data    = future_tbl,
+    actual_data = poudre_ts
+  ) %>%
+  filter(.key == "prediction") %>%
+  select(.model_id, Date = .index, Predicted = .value)
+
+# 3. Download daily streamflow for the next 12 months and aggregate this data to monthly averages
+obs_2024 <- readNWISdv(
+    siteNumber  = "06752260",
+    parameterCd = "00060",
+    startDate   = "2024-01-01",
+    endDate     = "2024-12-31"
+  ) %>%
+  renameNWISColumns() %>%
+  mutate(
+    Date = as_date(Date),
+    Date = floor_date(Date, "month")
+  ) %>%
+  group_by(Date) %>%
+  summarise(Observed = mean(Flow, na.rm = TRUE), .groups = "drop")
+
+# 4. Compute the R2 Values 
+compare_tbl <- forecast_tbl %>%
+  left_join(obs_2024, by = "Date")
+
+r2_val <- summary(lm(Observed ~ Predicted, data = compare_tbl))$r.squared
+cat("R² = ", round(r2_val, 3),
+    " → ", round(r2_val * 100, 1),
+    "% of observed monthly variance explained by the forecasts.\n", sep = "")
+```
+R-squared is the proportion of variance in the observed monthly flows that is explained by the forecasts. Values closer to 1 indicate better explanatory power. From this R2 value of 0.92, we can say that our forecasts explain 92% of the month-to-month variability in the observed 2024 flows, indicating the model captures the true seasonal and trend patterns very accurately. 
+```{r}
+# 5. Predicted vs Observed Values
+ggplot(compare_tbl, aes(x = Predicted, y = Observed, color = factor(.model_id))) +
+  geom_point(size = 2) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed") +  # 1:1 line
+  geom_smooth(method = "lm", se = FALSE) +                      # fit line
+  labs(
+    title    = "Forecasted vs Observed Monthly Flow (2024)",
+    subtitle = paste0("Models (IDs) & R² = ", round(r2_val, 3)),
+    x        = "Forecasted Mean (cfs)",
+    y        = "Observed Mean (cfs)",
+    color    = "Model\nID"
+  ) +
+  theme_minimal()
+```
