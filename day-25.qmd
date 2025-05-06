@@ -1,5 +1,102 @@
 ---
-title: "day-25"
+title: "Daily Assignment 25"
+subtitle: 'Ecosystem Science and Sustainability 330'
+author:
+  - name: Samantha Nauman
+    email: "snauman4@colostate.edu"
 format: html
+execute:
+  echo: true
 ---
+```{r}
+library(sf)          # vector data
+library(dplyr)       # data wrangling
+library(stringr)     # pattern matching
+library(AOI)         # easy county download
+library(ggplot2)     # plotting
+library(units)       # nice printing of km², etc.
+library(viridis)     # colour palette
 
+# 1–2
+rivers <- read_sf("data/majorrivers_0_0/MajorRivers.shp")        
+
+names(rivers)
+
+# 3.  Filter to the Mississippi River system, project, dissolve 
+miss_sys <- rivers |>
+  filter(SYSTEM == "Mississippi") |>
+  st_make_valid() |>
+  st_transform(5070) |>         
+  st_union()                     
+# 4.  Grab CONUS county polygons with AOI 
+library(AOI)
+library(sf)
+
+# all counties in the lower‑48 (CONUS)
+conus_counties <- AOI::aoi_get(
+    state  = "conus",   # built‑in keyword for the 48 contiguous states
+    county = "all"      # return every county polygon
+  ) |>
+  st_make_valid() |>
+  st_transform(5070) 
+
+# 5.  Pick the counties that touch the Mississippi system 
+miss_counties <- st_filter(conus_counties, miss_sys, .predicate = st_intersects)
+
+# 6.  First‑pass map (optional QA) 
+ggplot() +
+  geom_sf(data = miss_counties, fill = "cornsilk3", colour = "grey60", linewidth = .25) +
+  geom_sf(data = miss_sys,      colour = "steelblue", linewidth = .4) +
+  labs(title = "Counties intersecting the Mississippi River system") +
+  theme_minimal()
+
+# 7.  Read the city layer from last lab and re‑project 
+library(readr)
+
+cities <- read_csv("data/uscities.csv",
+                   show_col_types = FALSE) |>
+  st_as_sf(coords = c("lng", "lat"), crs = 4326, remove = FALSE) |>
+  st_transform(5070)
+
+# 8.  Cities that fall inside those counties 
+cities_in_county <- st_join(cities, miss_counties,
+                            join = st_within, left = FALSE)
+
+# 9.  Sum *population* (not pop) per county 
+pop_by_county <- cities_in_county |>
+  group_by(id) |>
+  summarise(urban_pop = sum(population, na.rm = TRUE), .groups = "drop")
+
+# 10.  Attach totals back to the county layer for mapping 
+miss_counties <- miss_counties |>
+  st_join(pop_by_county, by = "GEOID") |>
+  mutate(urban_pop = ifelse(is.na(urban_pop), 0, urban_pop))
+
+states_conus <- AOI::aoi_get(state = "conus") |>   # state = "conus" = lower‑48
+  st_make_valid() |>
+  st_transform(5070) 
+
+map <- ggplot() +
+  geom_sf(data = states_conus,
+          fill       = NA,
+          colour     = "grey40",
+          linewidth  = .25) +
+  geom_sf(data = miss_counties, aes(fill = urban_pop), colour = NA) +
+  geom_sf(data = miss_sys,      colour = "steelblue", linewidth = .35) +
+  scale_fill_viridis_c(
+    option   = "plasma",
+    name     = "Urban population",
+    labels   = scales::comma,
+    na.value = "grey90"
+  ) +
+  labs(
+    title    = "Urban population in counties intersecting the Mississippi River system"
+  ) +
+  theme_minimal()
+
+print(map)
+
+# 11.  Save the PNG for Canvas 
+ggsave("img/mississippi_urban_pop.png", map,
+       width = 11, height = 7, dpi = 300)
+```

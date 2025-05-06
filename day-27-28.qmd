@@ -1,0 +1,110 @@
+---
+title: "Daily Assignments 27 and 28"
+subtitle: 'Ecosystem Science and Sustainability 330'
+author:
+  - name: Samantha Nauman
+    email: "snauman4@colostate.edu"
+format: html
+execute:
+  echo: true
+---
+```{r}
+# Libraries
+library(osmdata)
+library(sf)
+library(terra)
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+```
+1. Define a river object
+```{r}
+# Create a geocode
+fc = AOI::geocode("Fort Collins", bbox = TRUE)
+
+# Get a river object 
+foco_rivers <- osmdata::opq(st_bbox(st_transform(fc,4326))) |> 
+  add_osm_feature("waterway") |> 
+  osmdata_sf()
+```
+
+2. Filter for Cache la Poudre River and Merge Lines
+```{r}
+# Filter to Cache la Poudre River
+poudre <- foco_rivers$osm_lines %>%
+  filter(str_detect(name, "Cache la Poudre"))
+
+# Merge into single line
+poudre_river <- st_union(poudre) |> 
+  st_as_sf()
+```
+
+3. Calculate River Length
+```{r}
+river_length <- st_length(poudre_river)
+print(river_length)
+```
+
+The river length is 175,417.7 meters.
+
+4.  Convert to POINTS
+```{r}
+poudre_pts <- st_cast(poudre_river, "POINT")
+```
+
+5. Define DEM Object
+```{r}
+# Fixes to make the dem code work 
+url <- 'https://raw.githubusercontent.com/mikejohnson51/csu-ess-330/a993e03df117a76c609ff4c018055f8c821a6de9/resources/foco-elev.tif'
+
+rast(glue::glue("/vsicurl/{url}"))
+
+Sys.setenv("AWS_NO_SIGN_REQUEST" = "YES")
+rast("/vsis3/lynker-spatial/gridded-resources/dem.vrt")
+
+# Load DEM from S3 (adjust path if needed)
+dem <- rast('/vsis3/lynker-spatial/gridded-resources/dem.vrt')
+```
+
+Extract River Profile (6,7,8)
+```{r}
+# Extract elevation from DEM
+elevations <- terra::extract(dem, vect(poudre_pts))
+
+# Combine with geometry
+river_profile <- bind_cols(poudre_pts, elevations) |>
+  mutate(ID = row_number())
+```
+Compute Sinuosity (9,10)
+```{r}
+start_end_dist <- st_distance(poudre_pts[1,], poudre_pts[nrow(poudre_pts),])
+sinuosity <- as.numeric(river_length) / as.numeric(start_end_dist)
+print(sinuosity)
+```
+The sinuosity is 2.99028. This indicates that the Cache la Poudre River meanders a lot rather than going straight, meaning it has numerous bends and curves.  
+
+# Compute Slope
+```{r}
+elev_change <- river_profile$dem[1] - river_profile$dem[nrow(river_profile)]
+slope <- as.numeric(elev_change) / as.numeric(river_length)
+print(slope)
+```
+The slope of the river is 0.9781622, meaning the river has some steep sections, but also some gentler stretches. 
+
+# Elevation Profile Plot
+```{r}
+ggplot(river_profile, aes(x = ID, y = dem)) +
+  geom_line(color = "blue") +
+  labs(x = "River Point ID", y = "Elevation (cm)", title = "Cache la Poudre River Elevation Profile") +
+  theme_minimal()
+```
+
+# Map of River Colored by Elevation
+```{r}
+ggplot(river_profile) +
+  geom_sf(aes(color = dem)) +
+  scale_color_viridis_c() +
+  labs(title = "River Map Colored by Elevation", color = "Elevation (cm)") +
+  theme_minimal()
+```
+```
