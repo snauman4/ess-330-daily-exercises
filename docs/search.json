@@ -46,6 +46,76 @@
     "href": "day-27-28.html",
     "title": "Daily Assignments 27 and 28",
     "section": "",
-    "text": "# Libraries\nlibrary(osmdata)\n\nData (c) OpenStreetMap contributors, ODbL 1.0. https://www.openstreetmap.org/copyright\n\nlibrary(sf)\n\nLinking to GEOS 3.13.0, GDAL 3.8.5, PROJ 9.5.1; sf_use_s2() is TRUE\n\nlibrary(terra)\n\nterra 1.8.42\n\nlibrary(dplyr)\n\n\nAttaching package: 'dplyr'\n\n\nThe following objects are masked from 'package:terra':\n\n    intersect, union\n\n\nThe following objects are masked from 'package:stats':\n\n    filter, lag\n\n\nThe following objects are masked from 'package:base':\n\n    intersect, setdiff, setequal, union\n\nlibrary(ggplot2)\nlibrary(tidyverse)\n\n── Attaching core tidyverse packages ──────────────────────── tidyverse 2.0.0 ──\n✔ forcats   1.0.0     ✔ stringr   1.5.1\n✔ lubridate 1.9.4     ✔ tibble    3.2.1\n✔ purrr     1.0.4     ✔ tidyr     1.3.1\n✔ readr     2.1.5     \n\n\n── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──\n✖ tidyr::extract() masks terra::extract()\n✖ dplyr::filter()  masks stats::filter()\n✖ dplyr::lag()     masks stats::lag()\nℹ Use the conflicted package (&lt;http://conflicted.r-lib.org/&gt;) to force all conflicts to become errors\n\n\n\nDefine a river object\n\n\n# Create a geocode\nfc = AOI::geocode(\"Fort Collins\", bbox = TRUE)\n\n# Get a river object \nfoco_rivers &lt;- osmdata::opq(st_bbox(st_transform(fc,4326))) |&gt; \n  add_osm_feature(\"waterway\") |&gt; \n  osmdata_sf()\n\n\nFilter for Cache la Poudre River and Merge Lines\n\n\n# Filter to Cache la Poudre River\npoudre &lt;- foco_rivers$osm_lines %&gt;%\n  filter(str_detect(name, \"Cache la Poudre\"))\n\n# Merge into single line\npoudre_river &lt;- st_union(poudre) |&gt; \n  st_as_sf()\n\n\nCalculate River Length\n\n\nriver_length &lt;- st_length(poudre_river)\nprint(river_length)\n\n175417.7 [m]\n\n\nThe river length is 175,417.7 meters.\n\nConvert to POINTS\n\n\npoudre_pts &lt;- st_cast(poudre_river, \"POINT\")\n\n\nDefine DEM Object\n\n\n# Fixes to make the dem code work \nurl &lt;- 'https://raw.githubusercontent.com/mikejohnson51/csu-ess-330/a993e03df117a76c609ff4c018055f8c821a6de9/resources/foco-elev.tif'\n\nrast(glue::glue(\"/vsicurl/{url}\"))\n\nclass       : SpatRaster \ndimensions  : 750, 591, 1  (nrow, ncol, nlyr)\nresolution  : 29.01279, 29.01279  (x, y)\nextent      : -769693.5, -752546.9, 1978477, 2000236  (xmin, xmax, ymin, ymax)\ncoord. ref. : +proj=aea +lat_0=23 +lon_0=-96 +lat_1=29.5 +lat_2=45.5 +x_0=0 +y_0=0 +datum=NAD83 +units=m +no_defs \nsource      : foco-elev.tif \nname        : foco-elev \nmin value   :      1466 \nmax value   :      1975 \n\nSys.setenv(\"AWS_NO_SIGN_REQUEST\" = \"YES\")\nrast(\"/vsis3/lynker-spatial/gridded-resources/dem.vrt\")\n\nclass       : SpatRaster \ndimensions  : 114503, 163008, 1  (nrow, ncol, nlyr)\nresolution  : 30, 30  (x, y)\nextent      : -2470965, 2419275, 186285, 3621375  (xmin, xmax, ymin, ymax)\ncoord. ref. : +proj=aea +lat_0=23 +lon_0=-96 +lat_1=29.5 +lat_2=45.5 +x_0=0 +y_0=0 +datum=NAD83 +units=m +no_defs \nsource      : dem.vrt \nname        : dem \n\n# Load DEM from S3 (adjust path if needed)\ndem &lt;- rast('/vsis3/lynker-spatial/gridded-resources/dem.vrt')\n\nExtract River Profile (6,7,8)\n\n# Extract elevation from DEM\nelevations &lt;- terra::extract(dem, vect(poudre_pts))\n\nWarning: [extract] transforming vector data to the CRS of the raster\n\n# Combine with geometry\nriver_profile &lt;- bind_cols(poudre_pts, elevations) |&gt;\n  mutate(ID = row_number())\n\nCompute Sinuosity (9,10)\n\nstart_end_dist &lt;- st_distance(poudre_pts[1,], poudre_pts[nrow(poudre_pts),])\nsinuosity &lt;- as.numeric(river_length) / as.numeric(start_end_dist)\nprint(sinuosity)\n\n[1] 2.99028\n\n\nThe sinuosity is 2.99028. This indicates that the Cache la Poudre River meanders a lot rather than going straight, meaning it has numerous bends and curves.\n\nCompute Slope\n\nelev_change &lt;- river_profile$dem[1] - river_profile$dem[nrow(river_profile)]\nslope &lt;- as.numeric(elev_change) / as.numeric(river_length)\nprint(slope)\n\n[1] 0.9781622\n\n\nThe slope of the river is 0.9781622, meaning the river has some steep sections, but also some gentler stretches.\n\n\nElevation Profile Plot\n\nggplot(river_profile, aes(x = ID, y = dem)) +\n  geom_line(color = \"blue\") +\n  labs(x = \"River Point ID\", y = \"Elevation (cm)\", title = \"Cache la Poudre River Elevation Profile\") +\n  theme_minimal()\n\n\n\n\n\n\n\n\n\n\nMap of River Colored by Elevation\n\nggplot(river_profile) +\n  geom_sf(aes(color = dem)) +\n  scale_color_viridis_c() +\n  labs(title = \"River Map Colored by Elevation\", color = \"Elevation (cm)\") +\n  theme_minimal()\n\n\n\n\n\n\n\n\n```"
+    "text": "# Libraries\nlibrary(osmdata)\n\nData (c) OpenStreetMap contributors, ODbL 1.0. https://www.openstreetmap.org/copyright\n\nlibrary(sf)\n\nLinking to GEOS 3.13.0, GDAL 3.8.5, PROJ 9.5.1; sf_use_s2() is TRUE\n\nlibrary(terra)\n\nterra 1.8.42\n\nlibrary(dplyr)\n\n\nAttaching package: 'dplyr'\n\n\nThe following objects are masked from 'package:terra':\n\n    intersect, union\n\n\nThe following objects are masked from 'package:stats':\n\n    filter, lag\n\n\nThe following objects are masked from 'package:base':\n\n    intersect, setdiff, setequal, union\n\nlibrary(ggplot2)\nlibrary(tidyverse)\n\n── Attaching core tidyverse packages ──────────────────────── tidyverse 2.0.0 ──\n✔ forcats   1.0.0     ✔ stringr   1.5.1\n✔ lubridate 1.9.4     ✔ tibble    3.2.1\n✔ purrr     1.0.4     ✔ tidyr     1.3.1\n✔ readr     2.1.5     \n\n\n── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──\n✖ tidyr::extract() masks terra::extract()\n✖ dplyr::filter()  masks stats::filter()\n✖ dplyr::lag()     masks stats::lag()\nℹ Use the conflicted package (&lt;http://conflicted.r-lib.org/&gt;) to force all conflicts to become errors"
+  },
+  {
+    "objectID": "day-27-28.html#define-a-river-object",
+    "href": "day-27-28.html#define-a-river-object",
+    "title": "Daily Assignments 27 and 28",
+    "section": "1. Define a river object",
+    "text": "1. Define a river object\n\n# Create a geocode\nfc = AOI::geocode(\"Fort Collins\", bbox = TRUE)\n\n# Get a river object \nfoco_rivers &lt;- osmdata::opq(st_bbox(st_transform(fc,4326))) |&gt; \n  add_osm_feature(\"waterway\") |&gt; \n  osmdata_sf()"
+  },
+  {
+    "objectID": "day-27-28.html#filter-for-cache-la-poudre-river-and-merge-lines",
+    "href": "day-27-28.html#filter-for-cache-la-poudre-river-and-merge-lines",
+    "title": "Daily Assignments 27 and 28",
+    "section": "2. Filter for Cache la Poudre River and Merge Lines",
+    "text": "2. Filter for Cache la Poudre River and Merge Lines\n\n# Filter to Cache la Poudre River\npoudre &lt;- foco_rivers$osm_lines %&gt;%\n  filter(str_detect(name, \"Cache la Poudre\"))\n\n# Merge into single line\npoudre_river &lt;- st_union(poudre) |&gt; \n  st_as_sf()"
+  },
+  {
+    "objectID": "day-27-28.html#calculate-river-length",
+    "href": "day-27-28.html#calculate-river-length",
+    "title": "Daily Assignments 27 and 28",
+    "section": "3. Calculate River Length",
+    "text": "3. Calculate River Length\n\nriver_length &lt;- st_length(poudre_river)\nprint(river_length)\n\n175417.7 [m]\n\n\nThe river length is 175,417.7 meters."
+  },
+  {
+    "objectID": "day-27-28.html#convert-to-points",
+    "href": "day-27-28.html#convert-to-points",
+    "title": "Daily Assignments 27 and 28",
+    "section": "4. Convert to POINTS",
+    "text": "4. Convert to POINTS\n\npoudre_pts &lt;- st_cast(poudre_river, \"POINT\")"
+  },
+  {
+    "objectID": "day-27-28.html#define-dem-object",
+    "href": "day-27-28.html#define-dem-object",
+    "title": "Daily Assignments 27 and 28",
+    "section": "5. Define DEM Object",
+    "text": "5. Define DEM Object\n\n# Fixes to make the dem code work \nurl &lt;- 'https://raw.githubusercontent.com/mikejohnson51/csu-ess-330/a993e03df117a76c609ff4c018055f8c821a6de9/resources/foco-elev.tif'\n\nrast(glue::glue(\"/vsicurl/{url}\"))\n\nclass       : SpatRaster \ndimensions  : 750, 591, 1  (nrow, ncol, nlyr)\nresolution  : 29.01279, 29.01279  (x, y)\nextent      : -769693.5, -752546.9, 1978477, 2000236  (xmin, xmax, ymin, ymax)\ncoord. ref. : +proj=aea +lat_0=23 +lon_0=-96 +lat_1=29.5 +lat_2=45.5 +x_0=0 +y_0=0 +datum=NAD83 +units=m +no_defs \nsource      : foco-elev.tif \nname        : foco-elev \nmin value   :      1466 \nmax value   :      1975 \n\nSys.setenv(\"AWS_NO_SIGN_REQUEST\" = \"YES\")\nrast(\"/vsis3/lynker-spatial/gridded-resources/dem.vrt\")\n\nclass       : SpatRaster \ndimensions  : 114503, 163008, 1  (nrow, ncol, nlyr)\nresolution  : 30, 30  (x, y)\nextent      : -2470965, 2419275, 186285, 3621375  (xmin, xmax, ymin, ymax)\ncoord. ref. : +proj=aea +lat_0=23 +lon_0=-96 +lat_1=29.5 +lat_2=45.5 +x_0=0 +y_0=0 +datum=NAD83 +units=m +no_defs \nsource      : dem.vrt \nname        : dem \n\n# Load DEM from S3 (adjust path if needed)\ndem &lt;- rast('/vsis3/lynker-spatial/gridded-resources/dem.vrt')"
+  },
+  {
+    "objectID": "day-27-28.html#extract-river-profile-678",
+    "href": "day-27-28.html#extract-river-profile-678",
+    "title": "Daily Assignments 27 and 28",
+    "section": "Extract River Profile (6,7,8)",
+    "text": "Extract River Profile (6,7,8)\n\n# Extract elevation from DEM\nelevations &lt;- terra::extract(dem, vect(poudre_pts))\n\nWarning: [extract] transforming vector data to the CRS of the raster\n\n# Combine with geometry\nriver_profile &lt;- bind_cols(poudre_pts, elevations) |&gt;\n  mutate(ID = row_number())"
+  },
+  {
+    "objectID": "day-27-28.html#compute-sinuosity-910",
+    "href": "day-27-28.html#compute-sinuosity-910",
+    "title": "Daily Assignments 27 and 28",
+    "section": "Compute Sinuosity (9,10)",
+    "text": "Compute Sinuosity (9,10)\n\nstart_end_dist &lt;- st_distance(poudre_pts[1,], poudre_pts[nrow(poudre_pts),])\nsinuosity &lt;- as.numeric(river_length) / as.numeric(start_end_dist)\nprint(sinuosity)\n\n[1] 2.99028\n\n\nThe sinuosity is 2.99028. This indicates that the Cache la Poudre River meanders a lot rather than going straight, meaning it has numerous bends and curves."
+  },
+  {
+    "objectID": "day-27-28.html#compute-slope",
+    "href": "day-27-28.html#compute-slope",
+    "title": "Daily Assignments 27 and 28",
+    "section": "11. Compute Slope",
+    "text": "11. Compute Slope\n\nelev_change &lt;- river_profile$dem[1] - river_profile$dem[nrow(river_profile)]\nslope &lt;- as.numeric(elev_change) / as.numeric(river_length)\nprint(slope)\n\n[1] 0.9781622\n\n\nThe slope of the river is 0.9781622, meaning the river has some steep sections, but also some gentler stretches."
+  },
+  {
+    "objectID": "day-27-28.html#elevation-profile-plot",
+    "href": "day-27-28.html#elevation-profile-plot",
+    "title": "Daily Assignments 27 and 28",
+    "section": "12. Elevation Profile Plot",
+    "text": "12. Elevation Profile Plot\n\nggplot(river_profile, aes(x = ID, y = dem)) +\n  geom_line(color = \"blue\") +\n  labs(x = \"River Point ID\", y = \"Elevation (cm)\", title = \"Cache la Poudre River Elevation Profile\") +\n  theme_minimal()"
+  },
+  {
+    "objectID": "day-27-28.html#map-of-river-colored-by-elevation",
+    "href": "day-27-28.html#map-of-river-colored-by-elevation",
+    "title": "Daily Assignments 27 and 28",
+    "section": "13. Map of River Colored by Elevation",
+    "text": "13. Map of River Colored by Elevation\n\nggplot(river_profile) +\n  geom_sf(aes(color = dem)) +\n  scale_color_viridis_c() +\n  labs(title = \"River Map Colored by Elevation\", color = \"Elevation (cm)\") +\n  theme_minimal()\n\n\n\n\n\n\n\n\n```"
   }
 ]

@@ -17,7 +17,7 @@ library(dplyr)
 library(ggplot2)
 library(tidyverse)
 ```
-1. Define a river object
+## 1. Define a river object
 ```{r}
 # Create a geocode
 fc = AOI::geocode("Fort Collins", bbox = TRUE)
@@ -28,7 +28,7 @@ foco_rivers <- osmdata::opq(st_bbox(st_transform(fc,4326))) |>
   osmdata_sf()
 ```
 
-2. Filter for Cache la Poudre River and Merge Lines
+## 2. Filter for Cache la Poudre River and Merge Lines
 ```{r}
 # Filter to Cache la Poudre River
 poudre <- foco_rivers$osm_lines %>%
@@ -39,7 +39,7 @@ poudre_river <- st_union(poudre) |>
   st_as_sf()
 ```
 
-3. Calculate River Length
+## 3. Calculate River Length
 ```{r}
 river_length <- st_length(poudre_river)
 print(river_length)
@@ -47,12 +47,12 @@ print(river_length)
 
 The river length is 175,417.7 meters.
 
-4.  Convert to POINTS
+## 4.  Convert to POINTS
 ```{r}
 poudre_pts <- st_cast(poudre_river, "POINT")
 ```
 
-5. Define DEM Object
+## 5. Define DEM Object
 ```{r}
 # Fixes to make the dem code work 
 url <- 'https://raw.githubusercontent.com/mikejohnson51/csu-ess-330/a993e03df117a76c609ff4c018055f8c821a6de9/resources/foco-elev.tif'
@@ -66,7 +66,7 @@ rast("/vsis3/lynker-spatial/gridded-resources/dem.vrt")
 dem <- rast('/vsis3/lynker-spatial/gridded-resources/dem.vrt')
 ```
 
-Extract River Profile (6,7,8)
+## Extract River Profile (6,7,8)
 ```{r}
 # Extract elevation from DEM
 elevations <- terra::extract(dem, vect(poudre_pts))
@@ -75,7 +75,7 @@ elevations <- terra::extract(dem, vect(poudre_pts))
 river_profile <- bind_cols(poudre_pts, elevations) |>
   mutate(ID = row_number())
 ```
-Compute Sinuosity (9,10)
+## Compute Sinuosity (9,10)
 ```{r}
 start_end_dist <- st_distance(poudre_pts[1,], poudre_pts[nrow(poudre_pts),])
 sinuosity <- as.numeric(river_length) / as.numeric(start_end_dist)
@@ -83,7 +83,7 @@ print(sinuosity)
 ```
 The sinuosity is 2.99028. This indicates that the Cache la Poudre River meanders a lot rather than going straight, meaning it has numerous bends and curves.  
 
-# Compute Slope
+## 11. Compute Slope
 ```{r}
 elev_change <- river_profile$dem[1] - river_profile$dem[nrow(river_profile)]
 slope <- as.numeric(elev_change) / as.numeric(river_length)
@@ -91,7 +91,7 @@ print(slope)
 ```
 The slope of the river is 0.9781622, meaning the river has some steep sections, but also some gentler stretches. 
 
-# Elevation Profile Plot
+## 12. Elevation Profile Plot
 ```{r}
 ggplot(river_profile, aes(x = ID, y = dem)) +
   geom_line(color = "blue") +
@@ -99,7 +99,7 @@ ggplot(river_profile, aes(x = ID, y = dem)) +
   theme_minimal()
 ```
 
-# Map of River Colored by Elevation
+## 13. Map of River Colored by Elevation
 ```{r}
 ggplot(river_profile) +
   geom_sf(aes(color = dem)) +
